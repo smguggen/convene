@@ -1,0 +1,8 @@
+.vscode
+node_modules
+_*.*
+bower_components
+*-lock.*
+.history
+.DS_Store
+dist
