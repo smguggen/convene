@@ -1,10 +1,10 @@
 {
   "name": "convene",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "A Node library for consolidating multiple modules, files, or objects",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node ./bin/test.js"
   },
   "keywords": [
     "node",
@@ -14,9 +14,12 @@
     "system",
     "consolidate"
   ],
+  "bin": {
+    "convene": "./bin/test.js"
+  },
   "author": "Steven Guggenheimer",
   "license": "MIT",
   "dependencies": {
-    "node": "^13.9.0"
+    "terser": "^4.6.6"
   }
 }

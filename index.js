@@ -1,1 +1,3 @@
-module.exports = require('./src/convene')
+module.exports = {
+    require: this.require('./src/require')
+}
