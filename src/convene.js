@@ -5,17 +5,21 @@ const Base = require('../lib/base');
 const { Writable } = require('stream');
 const Data = require('./data');
 const Events = require('../lib/events');
+const Write = require('../lib/write');
+const Obj = require('../lib/object');
 class Convene extends Base {
     constructor(options) {
         super();
         this._init(options); 
     }
     
-    merge(...args) {
+    merge(dest, dir, min) {
         if (!this.writable || !this.writable.length) {
             return this.events.fire('error', 'Queue is empty');
         }
-        this._setParams(...args);
+        if (dest) this.dest = dest;
+        if (dir != null && typeof dir !== 'undefined') this.dir = dir;
+        if (typeof min === 'boolean') this.min = min;
         if (!this.dest) {
             return this.events.fire('error', 'No destination path found.')
         }
@@ -30,10 +34,9 @@ class Convene extends Base {
             this.end();
         }
         if (this.objectMode) {
-            let Obj = require('../lib/object');
             this.writeObject = new Obj(this, loc, this.ext, this.min);
         }
-        let Write = require('../lib/write');
+        
         this.write = new Write(this, loc, this.ext, this.min);
         this.gen = this.generate();
         this.clear(this.dest, this.dir, () => { $this.events.fire('next') });
@@ -54,11 +57,7 @@ class Convene extends Base {
     
     get writableSources() {
         return Object.keys(this._writable);
-    }
-    
-    isQueued(q) {
-        return  this.writ
-    }
+    }     
     
     logWritten(s) {
         if (this._writable[s]) {
@@ -77,6 +76,13 @@ class Convene extends Base {
         this.events.fire('source', src);
         let objectMode = !(this.isReadable(data)) && this.objectMode;
         if (objectMode) {
+            if (typeof data === 'object') {
+                if (Array.isArray(data)) {
+                    data = data.join(', ');
+                } else {
+                    data = JSON.stringify(data, null, '\t');
+                }
+            }
             let res = this.writeObject.stream.write(data);
             if (!res) {
                 $this.writeObject.stream.once('drain', () => { 
@@ -98,7 +104,8 @@ class Convene extends Base {
     }
 
     
-    queue(src, dir, callback) {
+    queue(src, dir, callback, ext) {
+        ext = ext || this.ext;
         if (typeof callback !== 'function') {
             callback = dest => dest;
         }
@@ -114,7 +121,7 @@ class Convene extends Base {
         }
         if (src && src.length) {
             let s = src.reduce((acc, sr) => {
-                let { loc } = $this.getPath(sr, dir);
+                let { loc } = $this.getPath(sr, dir, ext);
                 let res = callback.call($this, loc);
                 if (res) {
                     acc[sr] = res;
@@ -175,12 +182,13 @@ class Convene extends Base {
         return null;
     }
     
-    getPath(loc, dir) {
+    getPath(loc, dir, ext) {
+        ext = ext || this.ext;
         if (dir) {
             dir = path.resolve(this.root, dir);
-            loc = path.resolve(dir, loc + '.' + this.ext);
+            loc = path.resolve(dir, loc + '.' + ext);
         } else {
-            loc = path.resolve(this.root, loc + '.' + this.ext);
+            loc = path.resolve(this.root, loc + '.' + ext);
         }
         return {
             dir:dir,
@@ -236,26 +244,14 @@ class Convene extends Base {
             options = {};
         }
         options = options || {};
-        this.dest = options.dest || null;
-        this.dir = options.dir || '';
-        this.ext = options.ext || 'js';
+        this.dest = options.dest || options.file || null;
+        this.dir = options.dir || options.directory || '';
+        this.ext = options.ext || options.extension || 'js';
         this.root = options.root || process.cwd();
         this.min = options.min ? true : false;
         this.objectMode = options.objectModeOff ? false : true;
-        this.encoding = options.encoding || 'utf-8';
+        this.encoding = options.encoding || options.enc || 'utf-8';
         this.timeout = options.timeout ? options.timeout : null;
-    }
-    
-    _setParams(...args) {
-        let key = ['dest', 'dir', 'min', 'encoding', 'ext', 'timeout', 'objectMode', 'root'];
-        let ind = 0;
-        while (ind < args.length) {
-            if (typeof args[ind] === 'boolean' || args[ind]) {
-                this[key[ind]] = args[ind];
-            }
-            ind++;
-        }
-        return this;
     }
     
     _init(options) {
@@ -269,7 +265,7 @@ class Convene extends Base {
     }
 }
 
-Convene.prototype.require = function(src, dir) {
+Convene.prototype.require = function(src, dir, ext) {
     let $this = this;
     return this.queue(src, dir, (dest) => {
         let res = null;
@@ -280,7 +276,7 @@ Convene.prototype.require = function(src, dir) {
         } finally {
             return res;
         }
-    });
+    }, ext);
 }
 
 module.exports = Convene;
