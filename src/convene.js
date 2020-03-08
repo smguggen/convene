@@ -30,7 +30,9 @@ class Convene extends Base {
         if (this.gen) {
             return this.events.fire('error', 'Writing in process, cancel current queue before starting another');
         }
-        
+        if (this.ext == 'json' && this.length > 1) {
+            this._wrapJson();
+        }
         let { loc } = this.getPath(this.dest, this.dir);
         this.loc = loc;
         let $this = this;
@@ -109,8 +111,6 @@ class Convene extends Base {
 
     
     queue(src, dir, callback, ext) {
-        let $this = this;
-       
         if (src && src.length) {
             let s = this.getWritable(src, dir, callback, ext);
             this.writable = s;
@@ -118,7 +118,7 @@ class Convene extends Base {
         return this;
     }
     
-    getWritable(src, dir, callback, ext) {
+    getWritable(src, dir, callback, ext, type) {
         if (typeof callback !== 'function') {
             callback = (dest, acc, ind) => {
                 if (dest) {
@@ -134,11 +134,12 @@ class Convene extends Base {
             src = [src];
         }
         let $this = this;
+        type = type || {};
         return src.reduce((acc, sr, ind) => {
             let { loc } = $this.getPath(sr, dir, ext);
             let res = fs.existsSync(loc) ? loc : sr;
             return callback.call($this, res, acc, ind);
-        }, {});
+        }, type);
     }
     
     clear(dest, dir, callback) {
@@ -244,6 +245,21 @@ class Convene extends Base {
             (!this.writeObject || 
             !this.writeObject.stream || 
             this.writeObject.stream.ended);
+    }
+    
+    _wrapJson() {
+        if (!this.length) {
+            return;
+        }
+        let r = {};
+        let q = this.getWritable(this.writable, null, (dest, acc, ind) => {
+            acc.push(dest);
+            return acc;      
+        }, 'json', []);
+        r[this.writableSources[0]] = [JSON.stringify(q, null, '\t')];
+        this.writable = null;
+        this.writable = r;
+        return this;
     }
     
     _setOptions(options) {
