@@ -1,3 +1,1 @@
-module.exports = {
-    require: this.require('./src/require')
-}
+module.exports = require('./src/convene');

@@ -11,26 +11,20 @@ class Convene extends Base {
         this._init(options); 
     }
     
-    send(dest, dir, min) {
+    merge(...args) {
         if (!this.writable || !this.writable.length) {
             return this.events.fire('error', 'Queue is empty');
         }
-        if (dest) {
-            this.dest = dest;
-        }
+        this._setParams(...args);
         if (!this.dest) {
             return this.events.fire('error', 'No destination path found.')
         }
         if (this.gen) {
             return this.events.fire('error', 'Writing in process, cancel current queue before starting another');
         }
-        if (dir) {
-            this.dir = dir;
-        }
-        if (typeof min === 'boolean') {
-            this.min = min;
-        }
+  
         let { loc } = this.getPath(this.dest, this.dir);
+        this.loc = loc;
         let $this = this;
         if (!this.isWritable()) {
             this.end();
@@ -42,7 +36,8 @@ class Convene extends Base {
         let Write = require('../lib/write');
         this.write = new Write(this, loc, this.ext, this.min);
         this.gen = this.generate();
-        return this.clear(dest, dir, () => { $this.events.fire('next') });
+        this.clear(dest, dir, () => { $this.events.fire('next') });
+        return this;
     }
     
     set writable(w) {
@@ -59,6 +54,10 @@ class Convene extends Base {
     
     get writableSources() {
         return Object.keys(this._writable);
+    }
+    
+    isQueued(q) {
+        return  this.writ
     }
     
     logWritten(s) {
@@ -100,6 +99,9 @@ class Convene extends Base {
 
     
     queue(src, dir, callback) {
+        if (typeof callback !== 'function') {
+            callback = dest => dest;
+        }
         let $this = this;
         if (!src) {
             return this.fire('error', 'No queueing source provided');
@@ -202,6 +204,7 @@ class Convene extends Base {
         if (this.writeObject && this.writeObject.stream && !this.writeObject.ended) {
             this.writeObject.stream.end();
         }
+        this.events.fire('end', this.loc);
         return this.reset();
     }
     
@@ -227,7 +230,7 @@ class Convene extends Base {
             this.writeObject.stream.ended);
     }
     
-    setOptions(options) {
+    _setOptions(options) {
         if (typeof options === 'boolean') {
             this.min = options;
             options = {};
@@ -243,9 +246,32 @@ class Convene extends Base {
         this.timeout = options.timeout ? options.timeout : null;
     }
     
+    _setParams(...args) {
+        let key = ['dest', 'dir', 'min', 'encoding', 'ext', 'timeout', 'objectMode', 'root'];
+        let ind = 0;
+        while (ind < args.length) {
+            
+            if (typeof args[ind] === 'boolean' || args[ind]) {
+                this[key[ind]] = args[ind];
+            }
+        }
+        return this;
+    }
+    
+    static params(...args) {
+        let obj = {};
+        let key = ['dest', 'dir', 'min', 'encoding', 'ext', 'timeout', 'objectMode', 'root'];
+        let ind = 0;
+        while (ind < args.length) {
+            if (typeof args[ind] === 'boolean' || args[ind]) {
+                obj[key[ind]] = args[ind];
+            }
+        }
+    }
+    
     _init(options) {
         this.events = new Events(this);
-        this.setOptions(options);
+        this._setOptions(options);
         this._writable = {};
         this.writable = [];
         this.written = [];

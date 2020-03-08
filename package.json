@@ -1,7 +1,7 @@
 {
   "name": "convene",
   "version": "0.0.4",
-  "description": "A Node library for consolidating multiple modules, files, or objects",
+  "description": "A Node library for merging multiple sources of differing types into one",
   "main": "index.js",
   "scripts": {
     "test": "node ./bin/test.js"
@@ -14,9 +14,6 @@
     "system",
     "consolidate"
   ],
-  "bin": {
-    "convene": "./bin/test.js"
-  },
   "author": "Steven Guggenheimer",
   "license": "MIT",
   "dependencies": {
