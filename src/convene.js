@@ -1,209 +1,176 @@
 const fs = require('fs');
 const path = require('path');
-const mini = require('terser');
 const { exec } = require('child_process');
-const { Writable, Readable } = require('stream');
-const buffer = require('buffer');
-module.exports = class {
+const Base = require('../lib/base');
+const { Writable } = require('stream');
+const Data = require('./data');
+const Events = require('../lib/events');
+class Convene extends Base {
     constructor(options) {
-        this._init(options);
-        
+        super();
+        this._init(options); 
     }
     
-    write(dest, dir, min, obj) {
-        let { loc } = this.getPath(dest, dir);
-        if (this.streaming) {
-           this.stream.end();
-           this.streaming = false;
+    send(dest, dir, min) {
+        if (!this.writable || !this.writable.length) {
+            return this.events.fire('error', 'Queue is empty');
         }
-        if (!this._writable || !this._writable.length) {
-            return this.fire('error', 'Queue is empty');
+        if (dest) {
+            this.dest = dest;
+        }
+        if (!this.dest) {
+            return this.events.fire('error', 'No destination path found.')
+        }
+        if (this.gen) {
+            return this.events.fire('error', 'Writing in process, cancel current queue before starting another');
+        }
+        if (dir) {
+            this.dir = dir;
         }
         if (typeof min === 'boolean') {
             this.min = min;
         }
-        if (typeof obj === 'boolean') {
-            this.objectMode = obj;
-        }
-        this.stream = this.writeStream(loc);
-        this.gen = this.generate();
-        let d = this.gen.next().value
-        return this.readStream(this.stream);
-    }
-    writeStream(dest,bufferEncoding) {
+        let { loc } = this.getPath(this.dest, this.dir);
         let $this = this;
-        let stream;
-        stream = new Writable({ 
-            objectMode: $this.objectMode ? true : false, 
-            write:(chunk, encoding, callback) => {
-                console.log('writing...');
-                $this.fire('writing', chunk)
-                let outcome = null;
-                try {
-                    fs.appendFile(dest, chunk + '\n', $this.callErr());
-                } catch(e) {
-                    outcome = e;
-                } finally {
-                    console.log(outcome);
-                    callback(outcome);
-                }
-                console.log('done writing...');
-            } 
-        });
-        this.streaming = true;
-        if (this.min) {
-            this._min(stream);
+        if (!this.isWritable()) {
+            this.end();
         }
-        stream.on('error', this.callErr());
-        stream.path = dest;
-        stream.on('end', () => {
-            $this.reset();
-            let msg = $this.min ? 'Objects written to ' + dest : 'File path is ' + dest;
-            console.info(msg); 
-            $this.fire('written');
-        });
-        stream.on('pipe', function(read) {
-                read.on('error', (err) => {
-                    $this.err(err);
-                    $this.end();
-                });
-                read.on('end', () => {
-                    console.log('ENDED');
-                    if ($this.gen && false) {
-                        let f = $this.gen.next().value;
-                        if (f) {
-                            $this.readStream(f, stream, bufferEncoding);
-                        } else {
-                            $this.end();
-                            $this.gen = null;
-                            let msg = $this.min ? 'Files written to ' + dest : 'File path is ' + dest;
-                            console.info(msg); 
-                            $this.fire('written');
-                        }
-                    } else {
-                        $this.end();
-                    }
-                });
-        });
-        return stream;
+        if (this.objectMode) {
+            let Obj = require('../lib/object');
+            this.writeObject = new Obj(this, loc, this.ext, this.min);
+        }
+        let Write = require('../lib/write');
+        this.write = new Write(this, loc, this.ext, this.min);
+        this.gen = this.generate();
+        return this.clear(dest, dir, () => { $this.events.fire('next') });
     }
     
-    readStream(writeStream, bufferEncoding) {
-        if (!this.gen) {
-            return this.fire('error', 'No read source found');
+    set writable(w) {
+        if (w == [] || w == {} || !w) {
+            this._writable = {};
+        } else {
+            this._writable = Object.assign({}, this._writable, w);
         }
+    }
+    
+    get writable() {
+        return Object.values(this._writable);
+    }
+    
+    get writableSources() {
+        return Object.keys(this._writable);
+    }
+    
+    logWritten(s) {
+        if (this._writable[s]) {
+            delete this._writable[s];
+        }
+        if (!this.written.includes(s)) {
+            this.written.push(s);
+        }
+        return this;
+    }
 
-        if (writeStream instanceof Writable) {
-            //bufferEncoding = bufferEncoding || 'utf8';
-            let $this = this;
-            let options = {
-                objectMode: $this.objectMode,
-                encoding:$this.encoding,
-                read: function(size) {
-                    console.log('reading...');
-                    let res;
-                    let f = $this.gen.next().value;
-                    if (f) {
-                        res = $this.fire('reading', f, size);
-                        res = res ? res : f;
-                    }
-                    if ($this.isReadable(res)) {
-                        let d;
-                        do {
-                            d = this.push(res, $this.encoding);
-                        } while(d);
-                        this.push(null);
-                    } else {
-                        let msg = 'Source not readable';
-                        $this.fire('error', msg);
-                        console.warn(msg);
-                    }
-                    console.log('done reading...');
-                } 
+    flow(d) {
+        let $this = this;
+        let src = d.source;
+        let data = d.data;
+        this.events.fire('source', src);
+        let objectMode = !(this.isReadable(data)) && this.objectMode;
+        if (objectMode) {
+            let res = this.writeObject.stream.write(data);
+            if (!res) {
+                $this.writeObject.stream.once('drain', () => { 
+                    $this.events.fire('drained', src);
+                });
+            } else {
+                $this.events.fire('drained', src);
             }
-            let read = new Readable(options);
-            read.on('data', (chunk) => {
-                while (res = writeStream.write(chunk))
+        } else {
+            let $this = this;
+            this.events.on('readEnd', function() {
+                $this.events.fire('drained', src);
             });
-        } else {
-            console.warn('No Write Stream found, create a write stream to read to before reading data');
-            return this;
+            let Read = require('../lib/read');
+            let read = new Read(this.events, data, this.encoding);
+            read.start(this.write.stream, data);
         }
+        return this;
     }
+
     
-    get maxLength() {
-        if (['utf8', 'utf-8'].includes(this.encoding)) {
-            return buffer.constants.MAX_STRING_LENGTH;
-        } else {
-            return buffer.constants.MAX_LENGTH
-        }
-    }
-    
-    queue(src, dir) {
+    queue(src, dir, callback) {
         let $this = this;
         if (!src) {
-            return;
+            return this.fire('error', 'No queueing source provided');
+        }
+        if (!(typeof callback === 'function')) {
+            return this.fire('error', 'No queueing callback provided');
         }
         if (!Array.isArray(src)) {
             src = [src];
         }
         if (src && src.length) {
-            let s = src.map(sr => $this._queue.call(this, sr, dir));
-            if (s && s.length) {
-                this._writable = this._writable.concat(s);
-            }
+            let s = src.reduce((acc, sr) => {
+                let { loc } = $this.getPath(sr, dir);
+                let res = callback.call($this, loc);
+                if (res) {
+                    acc[sr] = res;
+                }
+                return acc;
+            }, {});
+            this.writable = s;
         }
         return this;
     }
     
-    _queue(src, dir) {
-        let file = this.getPath(src, dir);
-        return file;
-    }
-    
-    clear(dir, callback) {
+    clear(dest, dir, callback) {
         let $this = this;
-        exec('rm -rf "' + dir + '"', (err, out, errMsg) => {
-            $this.fire('error', err, out, errMsg);
-            fs.mkdir(dir, () => {
-                callback.call($this);
+        if (dir) {
+            exec('rm -rf "' + dir + '"', (err, out, errMsg) => {
+                if (err || errMsg) {
+                    return this.events.fire('error', 'Delete Directory Error', err, errMsg);
+                }
+                if (out) {
+                    console.log(out);
+                }
+                fs.mkdir(dir, () => {
+                    callback.call($this);
+                });
             });
-        });
+        } else {
+            let { loc } = this.getPath(dest);
+            if (this.min) {
+                let min = loc.replace('.' + this.ext, '.min.' + this.ext);
+                if (fs.existsSync(min)) {
+                    fs.unlinkSync(min);
+                }
+            }
+            exec('rm "' + loc + '"', (err, out, errMsg) => {
+                if (err || errMsg) {
+                    return this.events.fire('error', 'Delete File Error', err, errMsg);
+                }
+                if (out) {
+                    console.log(out);
+                }
+                fs.mkdir(dir, () => {
+                    callback.call($this);
+                });
+            });
+        }
     }
 
     * generate() {
         let count = 0;
-        while(this._writable[count]) {
-            yield this._writable[count];
+        let srces = this.writableSources;
+        let writables = this.writable;
+        while(writables[count]) {
+            this.currentSrc = srces[count];
+            yield new Data(this, srces[count], writables[count]);
             count++;
         }
+        this.currentSrc = null;
         return null;
-    }
-    
-    isReadable(src) {
-        return this.objectMode || 
-            typeof src === 'string' ||
-            src instanceof Buffer ||
-            src instanceof Uint8Array
-    }
-    
-    _min(stream) {
-        let $this = this;
-        if (stream instanceof Writable) {
-            stream.on('finish', function() {
-                let min = this.path.replace('.' + $this.ext, '.min.' + $this.ext);
-                fs.readFile(this.path, 'utf8', (err, file) => {
-                    $this.err(err);
-                    let mi = mini.minify(file);
-                    if (mi.error) {
-                        $this.err(mi.error);
-                        return;
-                    }
-                    fs.writeFile(min, mi.code, 'utf8', $this.callErr());
-                });
-            });
-        }
-        return this;
     }
     
     getPath(loc, dir) {
@@ -220,77 +187,85 @@ module.exports = class {
     }
     
     reset() {
-        this._writable = [];
-        this.valid.forEach(ev => {
-            this[ev] = [];
-        }, this);
-        this.on('error', (err, out, e) => { this.err(err, out, e) });
+        this.writable = [];
+        this.written = [];
+        this.gen = null;
+        this.events = new Events(this);
         return this;
     }
     
     end() {
-        if (this.stream && !this.stream.ended) {
-            this.stream.end();
-            this.streaming = false;
+        if (this.write && this.write.stream && !this.write.ended) {
+           
+            this.write.stream.end();
+        }
+        if (this.writeObject && this.writeObject.stream && !this.writeObject.ended) {
+            this.writeObject.stream.end();
         }
         return this.reset();
     }
     
-    on(event, callback) {
-        if (this.valid.includes(event) && typeof callback === 'function') {
-            this[event].push(callback);
-        }
+    writeObjectActive() {
+        return this.objectMode && 
+            this.writeObject && 
+            this.writeObject.stream instanceof Writable &&
+            !this.writeObject.stream.ended
     }
     
-    fire(event, ...args) {
-        let res = null;
-        if (this.valid.includes(event) && this[event].length) {
-            this[event].forEach(ev => {
-                res = ev.call(this, res, ...args)
-            }, this);
-        }
-        return res;
+    writeActive() {
+        return this.write && 
+            this.write.stream instanceof Writable &&
+            !this.write.stream.ended
     }
     
-    err(err, out, e) {
-        if (err) {
-            this.end();    
-            console.warn(err);
-        }
-        if (out) {
-            console.log(out);
-        }
-        if (e) {
-            this.end();
-            console.warn(e);
-        }
-    }
-    
-    callErr() {
-        let $this = this;
-        return (err, out, e) => {
-            $this.fire('error', err, out, e);
-        }
+    isWritable() {
+        return (!this.write || 
+            !this.write.stream || 
+            this.write.stream.ended) &&
+            (!this.writeObject || 
+            !this.writeObject.stream || 
+            this.writeObject.stream.ended);
     }
     
     setOptions(options) {
+        if (typeof options === 'boolean') {
+            this.min = options;
+            options = {};
+        }
         options = options || {};
+        this.dest = options.dest || null;
+        this.dir = options.dir || '';
         this.ext = options.ext || 'js';
         this.root = options.root || process.cwd();
         this.min = options.min ? true : false;
-        this.objectMode = options.objectMode ? true : false;
+        this.objectMode = options.objectModeOff ? false : true;
         this.encoding = options.encoding || 'utf-8';
+        this.timeout = options.timeout ? options.timeout : null;
     }
     
     _init(options) {
+        this.events = new Events(this);
         this.setOptions(options);
-        this._writable = [];
+        this._writable = {};
+        this.writable = [];
+        this.written = [];
         this.gen = null;
-        this.valid = ['written', 'reading', 'writing', 'error', 'queueError'];
-        this.valid.forEach(ev => {
-            this[ev] = [];
-        }, this);
-        this.on('error', (err, out, e) => { this.err(err, out, e) });
-        this.streaming = false;
+        this.currentSrc = null;
     }
 }
+
+Convene.prototype.require = function(src, dir) {
+    let $this = this;
+    return this.queue(src, dir, (dest) => {
+        let res = null;
+        try {
+            res = require(dest);
+        } catch(e) {
+            $this.fire('queueError', e);
+        } finally {
+            return res;
+        }
+    });
+}
+
+module.exports = Convene;
