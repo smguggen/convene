@@ -5,20 +5,23 @@ const fs = require('fs');
 const path = require('path');
 
 const Convene = require('../src/convene');
-const convene = new Convene({
-    ext:'json'
-});
+const convene = new Convene();
 
-convene.require(['a', 'b', 'c'], 'etc/a');
-convene.require(['d', 'e', 'f'], 'etc/b');
+//convene.json(['a', 'b', 'c'], 'etc/a');
+//convene.json(['d', 'e', 'f'], 'etc/b');
+convene.json({
+    'etc/a': '*',
+    'etc/b': '*'
+});
 //convene.on('writing', data => data + ',');
 
 convene.on('queueError', function(e) {
     throw new Error(e);
 });
 
-/*convene.on('merged', () => {
-    console.log('Merge Firing');
+convene.on('merged', (con) => {
+
+   /* console.log('Merge Firing');
     let root = process.cwd();
 
     let key = fs.readFileSync(path.resolve(root, 'etc/key.js'));
@@ -27,8 +30,8 @@ convene.on('queueError', function(e) {
     let minRes = fs.readFileSync(path.resolve(root, 'etc/result/convene.min.js'));
 
     console.log(assert.equal(res, key, 'Files do not match'));
-    console.log(assert.equal(minRes, minKey, 'Minified Files do not match'));
-});*/
+    console.log(assert.equal(minRes, minKey, 'Minified Files do not match'));*/
+});
 
 
 convene.merge('convene', 'etc/result');
