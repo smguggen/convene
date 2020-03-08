@@ -13,6 +13,10 @@ class Convene extends Base {
         this._init(options); 
     }
     
+    get length() {
+        return this.writable.length + this.written.length;
+    }
+    
     merge(dest, dir, min) {
         if (!this.writable || !this.writable.length) {
             return this.events.fire('error', 'Queue is empty');
@@ -26,7 +30,7 @@ class Convene extends Base {
         if (this.gen) {
             return this.events.fire('error', 'Writing in process, cancel current queue before starting another');
         }
-  
+        
         let { loc } = this.getPath(this.dest, this.dir);
         this.loc = loc;
         let $this = this;
@@ -105,32 +109,36 @@ class Convene extends Base {
 
     
     queue(src, dir, callback, ext) {
-        ext = ext || this.ext;
-        if (typeof callback !== 'function') {
-            callback = dest => dest;
-        }
         let $this = this;
+       
+        if (src && src.length) {
+            let s = this.getWritable(src, dir, callback, ext);
+            this.writable = s;
+        }
+        return this;
+    }
+    
+    getWritable(src, dir, callback, ext) {
+        if (typeof callback !== 'function') {
+            callback = (dest, acc, ind) => {
+                if (dest) {
+                    acc[ind] = dest;
+                }
+                return acc;
+            }
+        }
         if (!src) {
             return this.fire('error', 'No queueing source provided');
-        }
-        if (!(typeof callback === 'function')) {
-            return this.fire('error', 'No queueing callback provided');
         }
         if (!Array.isArray(src)) {
             src = [src];
         }
-        if (src && src.length) {
-            let s = src.reduce((acc, sr) => {
-                let { loc } = $this.getPath(sr, dir, ext);
-                let res = callback.call($this, loc);
-                if (res) {
-                    acc[sr] = res;
-                }
-                return acc;
-            }, {});
-            this.writable = s;
-        }
-        return this;
+        let $this = this;
+        return src.reduce((acc, sr, ind) => {
+            let { loc } = $this.getPath(sr, dir, ext);
+            let res = fs.existsSync(loc) ? loc : sr;
+            return callback.call($this, res, acc, ind);
+        }, {});
     }
     
     clear(dest, dir, callback) {
@@ -200,7 +208,8 @@ class Convene extends Base {
         this.writable = [];
         this.written = [];
         this.gen = null;
-        this.events = new Events(this);
+        this.events = new Events(this, this.reset);
+        this.fire('end');
         return this;
     }
     
@@ -212,8 +221,7 @@ class Convene extends Base {
         if (this.writeObject && this.writeObject.stream && !this.writeObject.ended) {
             this.writeObject.stream.end();
         }
-        this.events.fire('end', this.loc);
-        return this.reset();
+        return this;
     }
     
     writeObjectActive() {
@@ -255,7 +263,7 @@ class Convene extends Base {
     }
     
     _init(options) {
-        this.events = new Events(this);
+        this.events = new Events(this, this.reset);
         this._setOptions(options);
         this._writable = {};
         this.writable = [];
@@ -266,17 +274,43 @@ class Convene extends Base {
 }
 
 Convene.prototype.require = function(src, dir, ext) {
-    let $this = this;
-    return this.queue(src, dir, (dest) => {
+    return this.queue(src, dir, (dest, acc) => {
         let res = null;
         try {
             res = require(dest);
         } catch(e) {
-            $this.fire('queueError', e);
+            res = dest;
         } finally {
-            return res;
+            if (res) {
+                acc[dest] = res;
+            }
+            return acc;
         }
     }, ext);
+}
+
+Convene.prototype.combine = function(name, ext) {
+    if (!this.objectMode) {
+        this.events.fire('error', 'Combine can only be used in object mode');
+    }
+    if (!this.length) {
+        this.events.fire('error', 'Queue is empty, nothing to combine');
+    }
+    let $this = this;
+    name = name || this.writableSources[0];
+    let r = {};
+    let q = this.getWritable(this.writable, null, (dest, acc, ind) => {
+        if (typeof dest === 'object') {
+            acc = Object.assign({}, acc, dest);
+        } else {
+            acc[$this.writableSources[ind]] = dest;
+        }
+        return acc;      
+    }, ext);
+    r[name] = q;
+    this.writable = null;
+    this.writable = r;
+    return this;
 }
 
 module.exports = Convene;
