@@ -1,6 +1,6 @@
 {
   "name": "convene",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "description": "A Node library for merging multiple sources of differing types into one",
   "main": "index.js",
   "scripts": {
