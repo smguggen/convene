@@ -272,6 +272,30 @@ class Convene extends Base {
         return this;
     }
     
+    static assemble(srces, dest, dir, ext, min) {
+        let convene = new Convene({
+            ext:ext,
+            min:min,
+            dest:dest,
+            dir:dir
+        });
+        if (typeof srces !== 'object' || !srces) {
+            this.events.fire('error', 'Invalid Source object');
+        }
+        for (let srcdir in srces) {
+            if (srces.hasOwnProperty(srcdir) && srces[srcdir]) {  
+                let resrc = typeof srces[srcdir] === 'object' && srces[srcdir].source ? srces[srcdir].source : '*';
+                let srccb = typeof srces[srcdir] === 'object' &&
+                srces[srcdir].use ? srces[srcdir].use : srces[srcdir];
+                if (typeof convene[srccb] !== 'function') {
+                    srccb = 'queue';
+                }
+                convene[srccb](resrc, srcdir);
+            }
+        }
+        convene.merge();
+    }
+    
     writeObjectActive() {
         return this.objectMode && 
             this.writeObject && 
