@@ -36,7 +36,7 @@ class Convene extends Base {
         let Write = require('../lib/write');
         this.write = new Write(this, loc, this.ext, this.min);
         this.gen = this.generate();
-        this.clear(dest, dir, () => { $this.events.fire('next') });
+        this.clear(this.dest, this.dir, () => { $this.events.fire('next') });
         return this;
     }
     
@@ -250,23 +250,12 @@ class Convene extends Base {
         let key = ['dest', 'dir', 'min', 'encoding', 'ext', 'timeout', 'objectMode', 'root'];
         let ind = 0;
         while (ind < args.length) {
-            
             if (typeof args[ind] === 'boolean' || args[ind]) {
                 this[key[ind]] = args[ind];
             }
+            ind++;
         }
         return this;
-    }
-    
-    static params(...args) {
-        let obj = {};
-        let key = ['dest', 'dir', 'min', 'encoding', 'ext', 'timeout', 'objectMode', 'root'];
-        let ind = 0;
-        while (ind < args.length) {
-            if (typeof args[ind] === 'boolean' || args[ind]) {
-                obj[key[ind]] = args[ind];
-            }
-        }
     }
     
     _init(options) {
