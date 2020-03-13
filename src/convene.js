@@ -56,10 +56,14 @@ class Convene {
     }
     
     queue(s, callback, ext) {
-        if (callback == 'json') {
-            ext = 'json';
+        let exts = s.split('.');
+        if (exts.length > 1) {
+            ext = exts.pop();
+            s = exts.join('');
+        } else {
+            ext = ext || 'js';
         }
-        this.ext = ext || 'js';
+        this.ext = ext;
         if (s && typeof s === 'object' && !Array.isArray(s)) {
             for (let t in s) {
                 if (s.hasOwnProperty(t)) {
