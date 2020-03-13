@@ -4,7 +4,7 @@
   "description": "A Node library for merging multiple sources of differing types into one",
   "main": "index.js",
   "scripts": {
-    "test": "node ./bin/test.js"
+    "test": "node ./bin/index.js"
   },
   "keywords": [
     "node",
