@@ -4,9 +4,10 @@ const path = require('path');
 const Read = require('../lib/read');
 const Write = require('../lib/write');
 const Data = require('../lib/data');
-const Events = require('../lib/events');
+const Events = require('@srcer/events');
 const { Writable } = require('stream');
 const { exec } = require('child_process');
+const { echo } = require('ternal');
 class Convene {
     constructor(root) {
         let $this = this;
@@ -41,7 +42,7 @@ class Convene {
         let $this = this;
         this.stream = this.write.stream(loc, this.read.length, min, timeout);
         this.gen = this.generate();
-        this.clear(dest, dir, () => { $this.events.fire('next', this.stream, this.gen) });
+        this.clear(dest, dir, () => { $this.events.fire('next', this.read.sources[0]) });
         return this;
     }
     
@@ -56,14 +57,6 @@ class Convene {
     }
     
     queue(s, callback, ext) {
-        let exts = s.split('.');
-        if (exts.length > 1) {
-            ext = exts.pop();
-            s = exts.join('');
-        } else {
-            ext = ext || 'js';
-        }
-        this.ext = ext;
         if (s && typeof s === 'object' && !Array.isArray(s)) {
             for (let t in s) {
                 if (s.hasOwnProperty(t)) {
@@ -98,11 +91,16 @@ class Convene {
         } else {
             ext = ext || 'js';
         }
+        if (ext) {
+            ext = '.' + ext;
+        } else {
+            ext = '';
+        }
         if (dir) {
             dir = path.resolve(this.root, dir);
-            loc = path.resolve(dir, loc + '.' + ext);
+            loc = path.resolve(dir, loc + ext);
         } else {
-            loc = path.resolve(this.root, loc + '.' + ext);
+            loc = path.resolve(this.root, loc + ext);
         }
         return {
             dir:dir,
@@ -164,7 +162,7 @@ class Convene {
         let $this = this;
         let src = d.source;
         let data = d.data;
-        this.events.fire('source', src);
+        this.events.fire('source', src, writer);
         let res = writer.write(data);
         if (!res) {
             writer.once('drain', () => { 
@@ -200,17 +198,21 @@ class Convene {
             let msg = 'Data written to ' + loc;
             console.log(msg);
         });
-
+        this.on('source', (src, writer) => {
+           writer.currentSrc = src; 
+        });
         this.on('error', (...args) => { 
             $this.end().reset();
-            throw new Error(args.join(', '));
+            echo('red', args.join(', '));
+            process.exit(0);
          });  
         
-        this.on('next', (stream, gen) => {
-            if (gen) {
-                let d = gen.next().value;
+        this.on('next', () => {
+            echo('green', 'Called');
+            if ($this.gen) {
+                let d = $this.gen.next().value;
                 if (d) {
-                    $this.flow(stream, d);
+                    $this.flow($this.stream, d);
                 } else {
                     $this.end();
                 }
