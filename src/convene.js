@@ -134,8 +134,8 @@ class Convene {
         return null;
     }
     
-    on(ev, cb) {
-        this.events.on(ev, cb);
+    on(ev, cb, calc) {
+        this.events.on(ev, cb, calc);
         return this;
     }
     
