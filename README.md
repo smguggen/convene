@@ -1,6 +1,6 @@
 # convene
 
-A Node library for merging files of multiple types into one
+A Node library for simple and flexible merging of multiple sources of various types into one file
 
 Install
 -------
