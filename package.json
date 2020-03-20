@@ -1,6 +1,6 @@
 {
   "name": "convene",
-  "version": "0.0.92",
+  "version": "0.0.93",
   "description": "A Node library for simple and flexible merging of multiple sources of various types into one file",
   "main": "index.js",
   "scripts": {
@@ -16,9 +16,6 @@
   ],
   "author": "Steven Guggenheimer",
   "license": "MIT",
-  "bin": {
-    "convene": "./bin/index.js"
-  },
   "dependencies": {
     "@srcer/events": "^1.0.36",
     "ternal": "^1.0.1",
