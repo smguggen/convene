@@ -231,9 +231,9 @@ Convene.prototype.minify = function(dest) {
         }
         let mi = {};
         try {
+            let fl = $this.events.calc('minify', file);
+            file = fl || file;
             mi = mini.minify(file);
-            let mis = $this.events.calc('minify', mi);
-            mi = mis || mi;
         } catch(e) {
             $this.events.fire('error', 'Terser Error', e);
         }
