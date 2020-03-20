@@ -7,4 +7,4 @@ convene.on('writing', (data) => data + '\n', true);
 convene.on('queueError', function(e) {
     throw new Error(e);
 });
-convene.merge('convene', 'etc/result');
+convene.merge(process.cwd() + '/etc/result/convene.json', 'result');

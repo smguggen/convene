@@ -1,10 +1,10 @@
 {
   "name": "convene",
   "version": "0.0.7",
-  "description": "A Node library for merging multiple sources of differing types into one",
+  "description": "A Node library for merging files of multiple types into one",
   "main": "index.js",
   "scripts": {
-    "test": "node ./bin/index.js"
+    "test": "node ./bin/test.js"
   },
   "keywords": [
     "node",
@@ -20,8 +20,8 @@
     "convene": "./bin/index.js"
   },
   "dependencies": {
-    "@srcer/events": "^1.0.2",
+    "@srcer/events": "^1.0.36",
     "ternal": "^1.0.1",
-    "terser": "^4.6.6"
+    "terser": "^4.6.7"
   }
 }

@@ -5,44 +5,56 @@ const Read = require('../lib/read');
 const Write = require('../lib/write');
 const Data = require('../lib/data');
 const Events = require('@srcer/events');
+const mini = require('terser');
 const { Writable } = require('stream');
 const { exec } = require('child_process');
 const { echo } = require('ternal');
 class Convene {
-    constructor(root) {
+    constructor(dest, dir) {
         let $this = this;
-        this.root = typeof root === 'string' ? root : process.cwd();
-        this.events = new Events(() => this.reset.call($this));
+        this.dir = dir;
+        this.dest = dest;
+        this.events = new Events(this);
         this.read = new Read(this.events);
         this.write = new Write(this.events);
         this._defaultEvents();
     }
     
-    merge(dest, dir, ext, min, timeout) {
-        if (typeof ext === 'boolean') {
-            min = ext;
-            ext = 'js';
-        } else {
-            ext = ext || this.ext || 'js';
-        }
+    merge(dest, dir, timeout) {
         
         if (!this.read.queue || !this.read.queue.length) {
             return console.warn('Queue is empty');
         }
-        if (!dest) {
+        if (dest) {
+            this.dest = dest;
+        }
+        if (!this.dest) {
             return console.warn('No destination path found.')
+        }
+        if (dir) {
+            this.dir = dir;
         }
         if (this.gen) {
             return console.warn('error', 'Writing in process, cancel current queue before starting another');
         }
-        if (ext == 'json' && this.read.length > 1) {
+        let exts = /\.([^\.]{2,})$/.exec(this.dest);
+        if (exts[1] && exts[1] == 'json' && this.read.length > 1) {
             this._wrapJson();
         }
-        let { loc } = this.getPath(dest, dir, ext);
         let $this = this;
-        this.stream = this.write.stream(loc, this.read.length, min, timeout);
+        this.stream = this.write.stream(this.dest, this.read.length, timeout);
         this.gen = this.generate();
-        this.clear(dest, dir, () => { $this.events.fire('next', this.read.sources[0]) });
+        
+        if (this.dir) {
+            let dirs = this.dest.split(dir);
+            let d = dirs[0] + '/' + dir;
+            $this.events.on('clear', () => {
+                $this.events.fire('next'); 
+            });
+            this.clear(d);
+        } else {
+            $this.events.fire('next'); 
+        }
         return this;
     }
     
@@ -71,51 +83,6 @@ class Convene {
         return this;
     }
     
-    getPaths(locs, dir, ext) {
-        return locs.map(location => {
-            let { loc } =  this.getPath(location, dir, ext);
-            return loc;
-        });
-    }
-    
-    getPath(loc, dir, ext) {
-        if (typeof loc !== 'string') {
-            return {
-                dir:dir,
-                loc:loc
-            }
-        }
-        dir = typeof dir === 'string' ? dir : '.';
-        if (ext === false || ext === '') {
-            ext = '';
-        } else {
-            ext = ext || 'js';
-        }
-        if (ext) {
-            ext = '.' + ext;
-        } else {
-            ext = '';
-        }
-        if (dir) {
-            dir = path.resolve(this.root, dir);
-            loc = path.resolve(dir, loc + ext);
-        } else {
-            loc = path.resolve(this.root, loc + ext);
-        }
-        return {
-            dir:dir,
-            loc:loc
-        }
-    }
-    
-    reset() {
-        this.events = new Events();
-        this.gen = null;
-        this._defaultEvents();
-        this.events.fire('end');
-        return this;
-    }
-    
     end() {
         if (this.stream && this.stream instanceof Writable && !this.stream.ended) {
             this.stream.end();
@@ -123,46 +90,26 @@ class Convene {
         return this;
     }
     
-    clear(dest, dir, callback) {
+    clear(dir) {
         let $this = this;
-        if (dir) {
-            exec('rm -rf "' + dir + '"', (err, out, errMsg) => {
-                if (err || errMsg) {
-                    return $this.events.fire('error', 'Delete Directory Error', err, errMsg);
-                }
-                if (out) {
-                    console.log(out);
-                }
-                fs.mkdir(dir, () => {
-                    callback.call($this);
-                });
-            });
-        } else {
-            if (this.min) {
-                let min = dest.replace('.' + this.ext, '.min.' + this.ext);
-                if (fs.existsSync(min)) {
-                    fs.unlinkSync(min);
-                }
+        exec('rm -rf "' + dir + '"', (err, out, errMsg) => {
+            if (err || errMsg) {
+                return $this.events.fire('error', 'Delete Directory Error', err, errMsg);
             }
-            exec('rm "' + loc + '"', (err, out, errMsg) => {
-                if (err || errMsg) {
-                    return $this.events.fire('error', 'Delete File Error', err, errMsg);
-                }
-                if (out) {
-                    console.log(out);
-                }
-                fs.mkdir(dir, () => {
-                    callback.call($this);
-                });
+            if (out) {
+                console.log(out);
+            }
+            fs.mkdir(dir, () => {
+                $this.events.fire('clear', dir);
             });
-        }
+        });
     }
     
     flow(writer, d) {
         let $this = this;
         let src = d.source;
         let data = d.data;
-        this.events.fire('source', src, writer);
+        this.events.fire('source', src);
         let res = writer.write(data);
         if (!res) {
             writer.once('drain', () => { 
@@ -181,7 +128,7 @@ class Convene {
         let $this = this;
         while(writables[count]) {
             let src = writables[count](sources[count]);
-            yield new Data(sources[count], src, $this.events);
+            yield new Data('src-' + count, src, $this.events);
             count++;
         }
         return null;
@@ -192,23 +139,64 @@ class Convene {
         return this;
     }
     
+    getPaths(locs, dir, ext) {
+        return locs.map(location => {
+            let { loc } =  this.getPath(location, dir, ext);
+            return loc;
+        });
+    }
+    
+    getPath(loc, dir, ext, root) {
+        if (typeof loc !== 'string') {
+            return {
+                dir:dir,
+                loc:loc
+            }
+        }
+        root = root || process.cwd();
+        dir = typeof dir === 'string' ? dir : '.';
+        if (ext === false || ext === '') {
+            ext = '';
+        } else {
+            ext = ext || 'js';
+        }
+        if (ext) {
+            ext = '.' + ext;
+        } else {
+            ext = '';
+        }
+        if (dir) {
+            dir = path.resolve(root, dir);
+            loc = path.resolve(dir, loc + ext);
+        } else {
+            loc = path.resolve(this.root, loc + ext);
+        }
+        return {
+            dir:dir,
+            loc:loc
+        }
+    }
+    
     _defaultEvents() {
         let $this = this;
         this.on('merged', (loc) => {
             let msg = 'Data written to ' + loc;
-            console.log(msg);
-        });
-        this.on('source', (src, writer) => {
-           writer.currentSrc = src; 
+            echo('green', msg);
         });
         this.on('error', (...args) => { 
-            $this.end().reset();
+            $this.end();
             echo('red', args.join(', '));
             process.exit(0);
-         });  
+         }); 
+         
+         this.on('end', function() {
+            $this.end();
+            $this.events = new Events($this);
+            $this.gen = null;
+            $this._defaultEvents();
+         });
         
         this.on('next', () => {
-            echo('green', 'Called');
             if ($this.gen) {
                 let d = $this.gen.next().value;
                 if (d) {
@@ -232,6 +220,39 @@ class Convene {
         this.queue(r);
         return this;
     }
+}
+
+Convene.prototype.minify = function(dest) {
+    let $this = this;
+    dest = dest || this.dest;
+    fs.readFile(dest, 'utf-8', (err, file) => {
+        if (err) {
+            $this.events.fire('error', 'Minify Read Error', err);
+        }
+        let mi = {};
+        try {
+            mi = mini.minify(file);
+            let mis = $this.events.calc('minify', mi);
+            mi = mis || mi;
+        } catch(e) {
+            $this.events.fire('error', 'Terser Error', e);
+        }
+        if (mi.error) {
+            $this.events.fire('error', 'Minify Error', mi.error);
+        }
+        let minPath = dest.replace(/\.([^\.]{2,})$/, '.min.$1');
+        fs.writeFile(minPath, mi.code, 'utf-8', (err, out, errMsg) => {
+            if (err || errMsg) {
+                return $this.events.fire('error', 'Minify Write Error', err, errMsg);
+            }
+            if (out) {
+                console.log(out);
+            }
+            $this.events.fire('minified');
+        });
+    });
+
+    return this;
 }
 
 module.exports = Convene;

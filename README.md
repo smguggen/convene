@@ -1,6 +1,6 @@
 # convene
 
-A Node library for consolidating multiple modules, files, or objects
+A Node library for merging files of multiple types into one
 
 Install
 -------
