@@ -10,61 +10,57 @@ const { Writable } = require('stream');
 const { exec } = require('child_process');
 const { echo } = require('ternal');
 class Convene {
-    constructor(dest, dir) {
-        let $this = this;
-        this.dir = dir;
-        this.dest = dest;
+    constructor(timeout) {
+        this.timeout = timeout || 30000;
         this.events = new Events(this);
         this.read = new Read(this.events);
         this.write = new Write(this.events);
+        this.success = [];
+        this.fail = [];
         this._defaultEvents();
     }
     
-    merge(dest, dir, timeout) {
-        
+    merge(dest, clear) {
+        let $this = this;
         if (!this.read.queue || !this.read.queue.length) {
-            return console.warn('Queue is empty');
+            this.fire('error', 'Queue is empty');
         }
-        if (dest) {
-            this.dest = dest;
-        }
-        if (!this.dest) {
-            return console.warn('No destination path found.')
-        }
-        if (dir) {
-            this.dir = dir;
+
+        if (!dest) {
+            this.fire('error', 'No destination path found.')
         }
         if (this.gen) {
-            return console.warn('error', 'Writing in process, cancel current queue before starting another');
+            this.fire('error', 'Writing in progress, cancel current queue before starting another');
         }
-        let exts = /\.([^\.]{2,})$/.exec(this.dest);
+        let exts = /\.([^\.]{2,})$/.exec(dest);
         if (exts[1] && exts[1] == 'json' && this.read.length > 1) {
             this._wrapJson();
         }
-        let $this = this;
-        this.stream = this.write.stream(this.dest, this.read.length, timeout);
+        this.stream = this.write.stream(dest, this.read.length, this.timeout);
         this.gen = this.generate();
         
-        if (this.dir) {
-            let dirs = this.dest.split(dir);
-            let d = dirs[0] + '/' + dir;
-            $this.events.on('clear', () => {
-                $this.events.fire('next'); 
+        if (clear) {
+            let d, fileOnly;
+            if (typeof clear === 'boolean') {
+                d = dest;
+                fileOnly = true;
+            } else {
+                let dirs = dest.split(clear);
+                d = dirs[0] + '/' + clear;
+            }
+            this.on('clear', () => {
+                $this.fire('next'); 
             });
-            this.clear(d);
+            this.clear(d, fileOnly);
         } else {
-            $this.events.fire('next'); 
+            this.fire('next'); 
         }
-        return this;
-    }
     
-    transform(callback) {
-        this.write.transform(callback);
         return this;
     }
     
     resize(callback) {
-        this.read.transform(callback);
+        this.read.resize(callback);
         return this;
     }
     
@@ -78,9 +74,20 @@ class Convene {
                 }
             }
         } else {
-            this.read.enqueue(s, callback);
+            if (Array.isArray(s)) {
+                for (let i = 0; i < s.length; i++) {
+                    let w = s[i];
+                    thir.read.enqueue(w, callback);
+                }
+            } else {
+                this.read.enqueue(s, callback);
+            }
         }
         return this;
+    }
+    
+    requeue(s, callback, ext) {
+        return new Convene(this.timeout).queue(s, callback, ext);
     }
     
     end() {
@@ -90,18 +97,22 @@ class Convene {
         return this;
     }
     
-    clear(dir) {
+    clear(dir, fileOnly) {
         let $this = this;
         exec('rm -rf "' + dir + '"', (err, out, errMsg) => {
             if (err || errMsg) {
-                return $this.events.fire('error', 'Delete Directory Error', err, errMsg);
+                return $this.fire('error', 'Delete Directory Error', err, errMsg);
             }
             if (out) {
                 console.log(out);
             }
-            fs.mkdir(dir, () => {
-                $this.events.fire('clear', dir);
-            });
+            if (!fileOnly) {
+                fs.mkdir(dir, () => {
+                    $this.fire('clear', dir);
+                });
+            } else {
+                $this.fire('clear', dir);
+            }
         });
     }
     
@@ -109,14 +120,14 @@ class Convene {
         let $this = this;
         let src = d.source;
         let data = d.data;
-        this.events.fire('source', src);
+        this.fire('source', src);
         let res = writer.write(data);
         if (!res) {
             writer.once('drain', () => { 
-                $this.events.fire('drained', src);
+                $this.fire('drained', src);
             });
         } else {
-            $this.events.fire('drained', src);
+            $this.fire('drained', src);
         }
         return this;
     }
@@ -139,6 +150,11 @@ class Convene {
         return this;
     }
     
+    fire(ev, ...args) {
+        this.events.fire(ev, ...args);
+        return this;
+    }
+    
     getPaths(locs, dir, ext) {
         return locs.map(location => {
             let { loc } =  this.getPath(location, dir, ext);
@@ -153,23 +169,15 @@ class Convene {
                 loc:loc
             }
         }
+        ext = ext && ext.substring(0,1) != '.' ? '.' + ext : ext;
+        loc = ext ? loc + ext : loc;
         root = root || process.cwd();
         dir = typeof dir === 'string' ? dir : '.';
-        if (ext === false || ext === '') {
-            ext = '';
-        } else {
-            ext = ext || 'js';
-        }
-        if (ext) {
-            ext = '.' + ext;
-        } else {
-            ext = '';
-        }
         if (dir) {
             dir = path.resolve(root, dir);
-            loc = path.resolve(dir, loc + ext);
+            loc = path.resolve(dir, loc);
         } else {
-            loc = path.resolve(this.root, loc + ext);
+            loc = path.resolve(this.root, loc);
         }
         return {
             dir:dir,
@@ -179,22 +187,39 @@ class Convene {
     
     _defaultEvents() {
         let $this = this;
-        this.on('merged', (loc) => {
-            let msg = 'Data written to ' + loc;
-            echo('green', msg);
+        this.on('merged', dest => {
+            $this.gen = null;
+            let msg = 'Data written to ' + dest;
+            if ($this.fail.length) {
+                msg = 'Data incomplete, sources ' + $this.fail.join(', ') + ' failed to write to destination'; 
+                echo('red', msg);
+            } else {
+                msg = 'Data written to ' + dest;
+                echo('green', msg);
+            }
+            $this.success = [];
+            $this.fail = [];
+            $this.fire('end');
         });
         this.on('error', (...args) => { 
             $this.end();
             echo('red', args.join(', '));
             process.exit(0);
-         }); 
+        }); 
+        this.on('success', (data, dest, src) => {
+           $this.success.push(src); 
+           $this.read.flush(src);
+        });
+        this.on('fail', (data, dest, src) => {
+            $this.fail.push(src); 
+            $this.read.flush(src);
+        });
          
-         this.on('end', function() {
+        this.on('end', function() {
             $this.end();
             $this.events = new Events($this);
-            $this.gen = null;
             $this._defaultEvents();
-         });
+        });
         
         this.on('next', () => {
             if ($this.gen) {
@@ -224,10 +249,9 @@ class Convene {
 
 Convene.prototype.minify = function(dest) {
     let $this = this;
-    dest = dest || this.dest;
     fs.readFile(dest, 'utf-8', (err, file) => {
         if (err) {
-            $this.events.fire('error', 'Minify Read Error', err);
+            $this.fire('error', 'Minify Read Error', err);
         }
         let mi = {};
         try {
@@ -235,20 +259,20 @@ Convene.prototype.minify = function(dest) {
             file = fl || file;
             mi = mini.minify(file);
         } catch(e) {
-            $this.events.fire('error', 'Terser Error', e);
+            $this.fire('error', 'Terser Error', e);
         }
         if (mi.error) {
-            $this.events.fire('error', 'Minify Error', mi.error);
+            $this.fire('error', 'Minify Error', mi.error);
         }
         let minPath = dest.replace(/\.([^\.]{2,})$/, '.min.$1');
         fs.writeFile(minPath, mi.code, 'utf-8', (err, out, errMsg) => {
             if (err || errMsg) {
-                return $this.events.fire('error', 'Minify Write Error', err, errMsg);
+                return $this.fire('error', 'Minify Write Error', err, errMsg);
             }
             if (out) {
                 console.log(out);
             }
-            $this.events.fire('minified');
+            $this.fire('minified');
         });
     });
 
