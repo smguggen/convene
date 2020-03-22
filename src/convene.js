@@ -66,22 +66,18 @@ class Convene {
     
     queue(s, callback, ext) {
         if (s && typeof s === 'object' && !Array.isArray(s)) {
-            for (let t in s) {
-                if (s.hasOwnProperty(t)) {
-                    let u = s[t];
-                    let v = Array.isArray(u) ? this.getPaths(u, t, ext) : this.getPath(u, t, ext).loc;
-                    this.read.enqueue(v, callback);
+           this._queueObj(s, callback, ext);
+        } else if (Array.isArray(s)) {
+            for (let i = 0; i < s.length; i++) {
+                let w = s[i];
+                if (w && typeof w === 'object' && !Array.isArray(w)) {
+                    this._queueObj(w, callback, ext);
+                } else {
+                    this.read.enqueue(w, callback);
                 }
             }
         } else {
-            if (Array.isArray(s)) {
-                for (let i = 0; i < s.length; i++) {
-                    let w = s[i];
-                    thir.read.enqueue(w, callback);
-                }
-            } else {
-                this.read.enqueue(s, callback);
-            }
+            this.read.enqueue(s, callback);
         }
         return this;
     }
@@ -243,6 +239,17 @@ class Convene {
         r = JSON.stringify(q, null, '\t');
         this.read.flush();
         this.queue(r);
+        return this;
+    }
+    
+    _queueObj(s, callback, ext) {
+        for (let t in s) {
+            if (s.hasOwnProperty(t)) {
+                let u = s[t];
+                let v = Array.isArray(u) ? this.getPaths(u, t, ext) : this.getPath(u, t, ext).loc;
+                this.read.enqueue(v, callback);
+            }
+        }
         return this;
     }
 }
