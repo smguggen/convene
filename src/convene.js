@@ -20,6 +20,10 @@ class Convene {
         this._defaultEvents();
     }
     
+    get length() {
+        return this.read.length + this.success.length + this.fail.length;
+    }
+    
     merge(dest, clear) {
         let $this = this;
         if (!this.read.queue || !this.read.queue.length) {
@@ -33,10 +37,10 @@ class Convene {
             this.fire('error', 'Writing in progress, cancel current queue before starting another');
         }
         let exts = /\.([^\.]{2,})$/.exec(dest);
-        if (exts[1] && exts[1] == 'json' && this.read.length > 1) {
+        if (exts[1] && exts[1] == 'json' && this.length > 1) {
             this._wrapJson();
         }
-        this.stream = this.write.stream(dest, this.read.length, this.timeout);
+        this.stream = this.write.stream(dest, this.length, this.timeout);
         this.gen = this.generate();
         
         if (clear) {
@@ -216,7 +220,9 @@ class Convene {
             $this.events = new Events($this);
             $this._defaultEvents();
         });
-        
+        this.on('minified', dest => {
+           echo('green', 'Minified data written to ' + dest); 
+        });
         this.on('next', () => {
             if ($this.gen) {
                 let d = $this.gen.next().value;
@@ -230,7 +236,7 @@ class Convene {
     }
     
     _wrapJson() {
-        if (!this.read.length) {
+        if (!this.length) {
             return;
         }
         let r = {};
@@ -279,7 +285,7 @@ Convene.prototype.minify = function(dest) {
             if (out) {
                 console.log(out);
             }
-            $this.fire('minified');
+            $this.fire('minified', dest);
         });
     });
 
