@@ -216,8 +216,6 @@ class Convene {
          
         this.on('end', function() {
             $this.end();
-            $this.events = new Events($this);
-            $this._defaultEvents();
         });
         this.on('minified', dest => {
            echo('green', 'Minified data written to ' + dest); 
