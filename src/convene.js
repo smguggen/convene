@@ -199,7 +199,6 @@ class Convene {
             }
             $this.success = [];
             $this.fail = [];
-            $this.fire('end');
         });
         this.on('error', (...args) => { 
             $this.end();
