@@ -284,7 +284,7 @@ Convene.prototype.minify = function(dest) {
             if (out) {
                 console.log(out);
             }
-            $this.fire('minified', dest);
+            $this.fire('minified', minPath);
         });
     });
 
