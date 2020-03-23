@@ -259,25 +259,37 @@ class Convene {
     }
 }
 
+Convene.prototype.ministring = function(str) {
+    let $this = this;
+    let mi = {};
+    try {
+        let st = $this.events.calc('minify', str);
+        str = st || str;
+        mi = mini.minify(str);
+    } catch(e) {
+        $this.fire('error', 'Terser Error', e);
+        return '';
+    }
+    if (!mi) {
+        $this.fire('error', 'Minify Error');
+        return '';
+    } else if (mi.error) {
+        $this.fire('error', 'Minify Error', mi.error);
+        return '';
+    } else {
+        return mi.code;
+    }
+}
+
 Convene.prototype.minify = function(dest) {
     let $this = this;
     fs.readFile(dest, 'utf-8', (err, file) => {
         if (err) {
             $this.fire('error', 'Minify Read Error', err);
         }
-        let mi = {};
-        try {
-            let fl = $this.events.calc('minify', file);
-            file = fl || file;
-            mi = mini.minify(file);
-        } catch(e) {
-            $this.fire('error', 'Terser Error', e);
-        }
-        if (mi.error) {
-            $this.fire('error', 'Minify Error', mi.error);
-        }
+        let mi = this.ministring(file);
         let minPath = dest.replace(/\.([^\.]{2,})$/, '.min.$1');
-        fs.writeFile(minPath, mi.code, 'utf-8', (err, out, errMsg) => {
+        fs.writeFile(minPath, mi, 'utf-8', (err, out, errMsg) => {
             if (err || errMsg) {
                 return $this.fire('error', 'Minify Write Error', err, errMsg);
             }
