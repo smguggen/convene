@@ -18,7 +18,7 @@
   "author": "Steven Guggenheimer",
   "license": "MIT",
   "dependencies": {
-    "@srcer/events": "^2.1.2",
+    "evental": "^1.0.2",
     "ternal": "^1.0.1",
     "terser": "^4.6.7"
   }
